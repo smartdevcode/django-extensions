@@ -55,7 +55,7 @@ class Command(BaseCommand):
     AWS_SECRET_ACCESS_KEY = ''
     AWS_BUCKET_NAME = ''
     DIRECTORY = ''
-    FILTER_LIST = ['.DS_Store', '.svn', '.hg', '.git', 'Thumbs.db']
+    FILTER_LIST = ['.DS_Store',]
     GZIP_CONTENT_TYPES = (
         'text/css',
         'application/javascript',
@@ -177,9 +177,8 @@ class Command(BaseCommand):
             return # Skip directories we don't want to sync
 
         # Later we assume the MEDIA_ROOT ends with a trailing slash
-        # TODO: Check if we should check os.path.sep for Windows
-        if not root_dir.endswith('/'):
-            root_dir = root_dir + '/'
+        if not root_dir.endswith(os.path.sep):
+            root_dir = root_dir + os.path.sep
 
         for file in names:
             headers = {}
