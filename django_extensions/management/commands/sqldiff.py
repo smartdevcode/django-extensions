@@ -19,6 +19,7 @@ KNOWN ISSUES:
 
 from django.core.management.base import BaseCommand
 from django.core.management import sql as _sql
+from django.core.management import CommandError
 from django.core.management.color import no_style
 from django.db import transaction, connection
 from django.db.models.fields import IntegerField
@@ -388,11 +389,15 @@ class MySQLDiff(SQLDiff):
     def get_field_db_type(self, description, field=None, table_name=None):
         from MySQLdb.constants import FIELD_TYPE
         # weird bug? in mysql db-api where it returns three times the correct value for field length
+        # if i remember correctly it had something todo with unicode strings
+        # TODO: Fix this is a more meaningful and better understood manner
         description = list(description)
         if description[1] not in [FIELD_TYPE.TINY, FIELD_TYPE.SHORT]: # exclude tinyints from conversion.
             description[3] = description[3]/3
             description[4] = description[4]/3
         db_type = super(MySQLDiff, self).get_field_db_type(description)
+        if not db_type:
+            return
         if field:
             if field.primary_key and db_type=='integer':
                 db_type += ' AUTO_INCREMENT'
@@ -433,6 +438,8 @@ class SqliteSQLDiff(SQLDiff):
 
     def get_field_db_type(self, description, field=None, table_name=None):
         db_type = super(SqliteSQLDiff, self).get_field_db_type(description)
+        if not db_type:
+            return
         if field:
             field_type = self.get_field_model_type(field)
             # Fix char/varchar inconsistencies
@@ -481,8 +488,7 @@ class PostgresqlSQLDiff(SQLDiff):
             if table_name:
                 tablespace = field.db_tablespace
                 if tablespace=="":
-                    tablespace="public"
-                #print self.constraints[('public', 'votes', 'object_id')]
+                    tablespace = "public"
                 check_constraint = self.check_constraints.get((tablespace, table_name, field.attname),{}).get('pg_get_constraintdef', None)
                 if check_constraint:
                     check_constraint = check_constraint.replace("((", "(")
@@ -549,7 +555,7 @@ to check/debug ur models compared to the real database tables and columns."""
                 raise CommandError('Enter at least one appname.')
             try:
                 app_list = [models.get_app(app_label) for app_label in app_labels]
-            except (ImproperlyConfigured, ImportError), e:
+            except (models.ImproperlyConfigured, ImportError), e:
                 raise CommandError("%s. Are you sure your INSTALLED_APPS setting is correct?" % e)
 
             app_models = []
