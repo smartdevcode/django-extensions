@@ -19,7 +19,6 @@ KNOWN ISSUES:
 
 from django.core.management.base import BaseCommand
 from django.core.management import sql as _sql
-from django.core.management import CommandError
 from django.core.management.color import no_style
 from django.db import transaction, connection
 from django.db.models.fields import IntegerField
@@ -203,7 +202,7 @@ class SQLDiff(object):
     def find_unique_missing_in_db(self, meta, table_indexes, table_name):
         for field in meta.fields:
             if field.unique:
-                attname = field.attname
+                attname = field.db_column or field.attname
                 if attname in table_indexes and table_indexes[attname]['unique']:
                     continue
                 self.add_difference('unique-missing-in-db', table_name, attname)
@@ -211,7 +210,7 @@ class SQLDiff(object):
     def find_unique_missing_in_model(self, meta, table_indexes, table_name):
         # TODO: Postgresql does not list unique_togethers in table_indexes
         #       MySQL does
-        fields = dict([(field.name, field.unique) for field in meta.fields])
+        fields = dict([(field.db_column or field.name, field.unique) for field in meta.fields])
         for att_name, att_opts in table_indexes.iteritems():
             if att_opts['unique'] and att_name in fields and not fields[att_name]:
                 if att_name in flatten(meta.unique_together): continue
@@ -220,7 +219,7 @@ class SQLDiff(object):
     def find_index_missing_in_db(self, meta, table_indexes, table_name):
         for field in meta.fields:
             if field.db_index:
-                attname = field.attname
+                attname = field.db_column or field.attname
                 if not attname in table_indexes:
                     self.add_difference('index-missing-in-db', table_name, attname)
 
@@ -300,7 +299,7 @@ class SQLDiff(object):
                 continue
             
             table_indexes = self.introspection.get_indexes(self.cursor, table_name)
-            fieldmap = dict([(field.get_attname(), field) for field in meta.fields])
+            fieldmap = dict([(field.db_column or field.get_attname(), field) for field in meta.fields])
             
             # add ordering field if model uses order_with_respect_to
             if meta.order_with_respect_to:
@@ -389,15 +388,11 @@ class MySQLDiff(SQLDiff):
     def get_field_db_type(self, description, field=None, table_name=None):
         from MySQLdb.constants import FIELD_TYPE
         # weird bug? in mysql db-api where it returns three times the correct value for field length
-        # if i remember correctly it had something todo with unicode strings
-        # TODO: Fix this is a more meaningful and better understood manner
         description = list(description)
         if description[1] not in [FIELD_TYPE.TINY, FIELD_TYPE.SHORT]: # exclude tinyints from conversion.
             description[3] = description[3]/3
             description[4] = description[4]/3
         db_type = super(MySQLDiff, self).get_field_db_type(description)
-        if not db_type:
-            return
         if field:
             if field.primary_key and db_type=='integer':
                 db_type += ' AUTO_INCREMENT'
@@ -438,8 +433,6 @@ class SqliteSQLDiff(SQLDiff):
 
     def get_field_db_type(self, description, field=None, table_name=None):
         db_type = super(SqliteSQLDiff, self).get_field_db_type(description)
-        if not db_type:
-            return
         if field:
             field_type = self.get_field_model_type(field)
             # Fix char/varchar inconsistencies
@@ -488,7 +481,8 @@ class PostgresqlSQLDiff(SQLDiff):
             if table_name:
                 tablespace = field.db_tablespace
                 if tablespace=="":
-                    tablespace = "public"
+                    tablespace="public"
+                #print self.constraints[('public', 'votes', 'object_id')]
                 check_constraint = self.check_constraints.get((tablespace, table_name, field.attname),{}).get('pg_get_constraintdef', None)
                 if check_constraint:
                     check_constraint = check_constraint.replace("((", "(")
@@ -555,7 +549,7 @@ to check/debug ur models compared to the real database tables and columns."""
                 raise CommandError('Enter at least one appname.')
             try:
                 app_list = [models.get_app(app_label) for app_label in app_labels]
-            except (models.ImproperlyConfigured, ImportError), e:
+            except (ImproperlyConfigured, ImportError), e:
                 raise CommandError("%s. Are you sure your INSTALLED_APPS setting is correct?" % e)
 
             app_models = []
