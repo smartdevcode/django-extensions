@@ -4,7 +4,6 @@ Django Extensions additional model fields
 
 from django.template.defaultfilters import slugify
 from django.db.models import DateTimeField, CharField, SlugField
-from django.db.models.fields import FieldDoesNotExist
 import datetime
 import re
 
@@ -21,7 +20,7 @@ class AutoSlugField(SlugField):
     Required arguments:
 
     populate_from
-        Specifies which field the slug is populated from.
+        Specifies which field or list of fields the slug is populated from.
 
     Optional arguments:
 
@@ -61,16 +60,14 @@ class AutoSlugField(SlugField):
 
     def create_slug(self, model_instance, add):
         # get fields to populate from and slug field to set
-        if isinstance(self._populate_from, basestring):
-            populate_field = [model_instance._meta.get_field(self._populate_from)]
-        elif isinstance(self._populate_from, (tuple, list)):
-            populate_field = [model_instance._meta.get_field(f) for f in self._populate_from]
-        else:
-            raise FieldDoesNotExist('populate_from must either be a string with one field or a tuple or list of multiple fields')
+        if not isinstance(self._populate_from, (list, tuple)):
+            self._populate_from = (self._populate_from, )
         slug_field = model_instance._meta.get_field(self.attname)
+
         if add or self.overwrite:
             # slugify the original field content and set next step to 2
-            slug = self.separator.join(slugify(getattr(model_instance, field.attname)) for field in populate_field)
+            slug_for_field = lambda field: slugify(getattr(model_instance, field))
+            slug = self.separator.join(map(slug_for_field, self._populate_from))
             next = 2
         else:
             # get slug from the current model instance and calculate next
@@ -97,9 +94,17 @@ class AutoSlugField(SlugField):
         if model_instance.pk:
             queryset = queryset.exclude(pk=model_instance.pk)
 
+        # form a kwarg dict used to impliment any unique_together contraints
+        kwargs = {}
+        for params in model_instance._meta.unique_together:
+            if self.attname in params:
+                for param in params:
+                    kwargs[param] = getattr(model_instance, param, None)
+        kwargs[self.attname] = slug
+
         # increases the number while searching for the next valid slug
         # depending on the given slug, clean-up
-        while not slug or queryset.filter(**{self.attname: slug}):
+        while not slug or queryset.filter(**kwargs):
             slug = original_slug
             end = '%s%s' % (self.separator, next)
             end_len = len(end)
@@ -107,6 +112,7 @@ class AutoSlugField(SlugField):
                 slug = slug[:slug_len-end_len]
                 slug = self._slug_strip(slug)
             slug = '%s%s' % (slug, end)
+            kwargs[self.attname] = slug
             next += 1
         return slug
 
@@ -202,4 +208,3 @@ class UUIDField(CharField):
                 value = unicode(self.create_uuid())
                 setattr(model_instance, self.attname, value)
         return value
-
