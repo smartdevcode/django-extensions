@@ -5,6 +5,9 @@ TODO:
  - better support for relations
  - better support for constraints (mainly postgresql?)
  - support for table spaces with postgresql
+ - when a table is not managed (meta.managed==False) then only do a one-way
+   sqldiff ? show differences from db->table but not the other way around since
+   it's not managed.
  
 KNOWN ISSUES:
  - MySQL has by far the most problems with introspection. Please be
@@ -184,14 +187,22 @@ class SQLDiff(object):
 
         if reverse_type == "DecimalField":
             kwargs['max_digits'] = description[4]
-            kwargs['decimal_places'] = description[5]
+            kwargs['decimal_places'] = abs(description[5])
 
         if description[6]:
             kwargs['blank'] = True
             if not reverse_type in ('TextField', 'CharField'):
                 kwargs['null'] = True
-
-        field_db_type = getattr(models, reverse_type)(**kwargs).db_type()
+        
+        if '.' in reverse_type:
+            from django.utils import importlib
+            # TODO: when was importlib added to django.utils ? and do we
+            # need to add backwards compatibility code ?
+            module_path, package_name = reverse_type.rsplit('.', 1)
+            module = importlib.import_module(module_path)
+            field_db_type = getattr(module, package_name)(**kwargs).db_type()
+        else:
+            field_db_type = getattr(models, reverse_type)(**kwargs).db_type()
         return field_db_type
 
     def strip_parameters(self, field_type):
@@ -450,6 +461,9 @@ class PostgresqlSQLDiff(SQLDiff):
     DATA_TYPES_REVERSE_OVERRIDE = {
         20: 'IntegerField',
         1042: 'CharField',
+        # postgis types (TODO: support is very incomplete)
+        17506: 'django.contrib.gis.db.models.fields.PointField',
+        55902: 'django.contrib.gis.db.models.fields.MultiPolygonField',
     }
 
     # Hopefully in the future we can add constraint checking and other more
@@ -564,6 +578,9 @@ to check/debug ur models compared to the real database tables and columns."""
             app_models = []
             for app in app_list:
                 app_models.extend(models.get_models(app))
+
+        ## remove all models that are not managed by Django
+        #app_models = [model for model in app_models if getattr(model._meta, 'managed', True)]
 
         if not app_models:
             raise CommandError('Unable to execute sqldiff no models founds.')
