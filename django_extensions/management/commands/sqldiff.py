@@ -184,22 +184,14 @@ class SQLDiff(object):
 
         if reverse_type == "DecimalField":
             kwargs['max_digits'] = description[4]
-            kwargs['decimal_places'] = abs(description[5])
+            kwargs['decimal_places'] = description[5]
 
         if description[6]:
             kwargs['blank'] = True
             if not reverse_type in ('TextField', 'CharField'):
                 kwargs['null'] = True
-        
-        if '.' in reverse_type:
-            from django.utils import importlib
-            # TODO: when was importlib added to django.utils ? and do we
-            # need to add backwards compatibility code ?
-            module_path, package_name = reverse_type.rsplit('.', 1)
-            module = importlib.import_module(module_path)
-            field_db_type = getattr(module, package_name)(**kwargs).db_type()
-        else:
-            field_db_type = getattr(models, reverse_type)(**kwargs).db_type()
+
+        field_db_type = getattr(models, reverse_type)(**kwargs).db_type()
         return field_db_type
 
     def strip_parameters(self, field_type):
@@ -208,7 +200,7 @@ class SQLDiff(object):
         return field_type
 
     def find_unique_missing_in_db(self, meta, table_indexes, table_name):
-        for field in meta.fields:
+        for field in meta.local_fields:
             if field.unique:
                 attname = field.db_column or field.attname
                 if attname in table_indexes and table_indexes[attname]['unique']:
@@ -218,21 +210,21 @@ class SQLDiff(object):
     def find_unique_missing_in_model(self, meta, table_indexes, table_name):
         # TODO: Postgresql does not list unique_togethers in table_indexes
         #       MySQL does
-        fields = dict([(field.db_column or field.name, field.unique) for field in meta.fields])
+        fields = dict([(field.db_column or field.name, field.unique) for field in meta.local_fields])
         for att_name, att_opts in table_indexes.iteritems():
             if att_opts['unique'] and att_name in fields and not fields[att_name]:
                 if att_name in flatten(meta.unique_together): continue
                 self.add_difference('unique-missing-in-model', table_name, att_name)
 
     def find_index_missing_in_db(self, meta, table_indexes, table_name):
-        for field in meta.fields:
+        for field in meta.local_fields:
             if field.db_index:
                 attname = field.db_column or field.attname
                 if not attname in table_indexes:
                     self.add_difference('index-missing-in-db', table_name, attname)
 
     def find_index_missing_in_model(self, meta, table_indexes, table_name):
-        fields = dict([(field.name, field) for field in meta.fields])
+        fields = dict([(field.name, field) for field in meta.local_fields])
         for att_name, att_opts in table_indexes.iteritems():
             if att_name in fields:
                 field = fields[att_name]
@@ -255,7 +247,7 @@ class SQLDiff(object):
 
     def find_field_type_differ(self, meta, table_description, table_name, func=None):
         db_fields = dict([(row[0], row) for row in table_description])
-        for field in meta.fields:
+        for field in meta.local_fields:
             if field.name not in db_fields: continue
             description = db_fields[field.name]
 
@@ -271,7 +263,7 @@ class SQLDiff(object):
 
     def find_field_parameter_differ(self, meta, table_description, table_name, func=None):
         db_fields = dict([(row[0], row) for row in table_description])
-        for field in meta.fields:
+        for field in meta.local_fields:
             if field.name not in db_fields: continue
             description = db_fields[field.name]
 
@@ -307,7 +299,7 @@ class SQLDiff(object):
                 continue
             
             table_indexes = self.introspection.get_indexes(self.cursor, table_name)
-            fieldmap = dict([(field.db_column or field.get_attname(), field) for field in meta.fields])
+            fieldmap = dict([(field.db_column or field.get_attname(), field) for field in meta.local_fields])
             
             # add ordering field if model uses order_with_respect_to
             if meta.order_with_respect_to:
@@ -426,7 +418,7 @@ class SqliteSQLDiff(SQLDiff):
     # if this is more generic among databases this might be usefull
     # to add to the superclass's find_unique_missing_in_db method
     def find_unique_missing_in_db(self, meta, table_indexes, table_name):
-        for field in meta.fields:
+        for field in meta.local_fields:
             if field.unique:
                 attname = field.attname
                 if attname in table_indexes and table_indexes[attname]['unique']:
@@ -458,9 +450,6 @@ class PostgresqlSQLDiff(SQLDiff):
     DATA_TYPES_REVERSE_OVERRIDE = {
         20: 'IntegerField',
         1042: 'CharField',
-        # postgis types (TODO: support is very incomplete)
-        17506: 'django.contrib.gis.db.models.fields.PointField',
-        55902: 'django.contrib.gis.db.models.fields.MultiPolygonField',
     }
 
     # Hopefully in the future we can add constraint checking and other more
@@ -548,6 +537,10 @@ to check/debug ur models compared to the real database tables and columns."""
     args = '<appname appname ...>'
 
     def handle(self, *app_labels, **options):
+        from django import VERSION
+        if VERSION[:2]<(1,0):
+            raise CommandError("SQLDiff only support Django 1.0 or higher!")
+
         from django.db import models
         from django.conf import settings
 
