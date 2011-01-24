@@ -1,5 +1,4 @@
 from django.db import models
-from django_extensions.tests.test_dumpscript import DumpScriptTests
 from django_extensions.tests.utils import UTILS_TRUNCATE_LETTERS_TESTS
 from django_extensions.tests.utils import UTILS_UUID_TESTS
 try:
