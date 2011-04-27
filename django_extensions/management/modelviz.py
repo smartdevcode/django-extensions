@@ -36,6 +36,9 @@ options:
 
     -X, --exclude_models
     exclude specific model(s) from the graph.
+    
+    -e, --inheritance
+    show inheritance arrows.
 """
 __version__ = "0.9"
 __svnid__ = "$Id$"
@@ -49,6 +52,7 @@ __contributors__ = [
    "Justin Findlay <jfindlay@gmail.com>",
    "Alexander Houben <alexander@houben.ch>",
    "Bas van Oostveen <v.oostveen@gmail.com>",
+   "Joern Hees <gitdev@joernhees.de>"
 ]
 
 import os
@@ -70,7 +74,7 @@ from django.template import Template, Context
 from django.db import models
 from django.db.models import get_models
 from django.db.models.fields.related import \
-    ForeignKey, OneToOneField, ManyToManyField
+    ForeignKey, OneToOneField, ManyToManyField, RelatedField
 
 try:
     from django.db.models.fields.generic import GenericRelation
@@ -79,6 +83,8 @@ except ImportError:
 
 head_template = """
 digraph name {
+  rankdir=BT
+  labelloc="b"
   fontname = "Helvetica"
   fontsize = 8
 
@@ -90,6 +96,7 @@ digraph name {
   edge [
     fontname = "Helvetica"
     fontsize = 8
+    labelangle = 0
   ]
 
 """
@@ -113,6 +120,7 @@ subgraph {{ cluster_app_name }} {
      <TR><TD COLSPAN="2" CELLPADDING="4" ALIGN="CENTER" BGCOLOR="olivedrab4"
      ><FONT FACE="Helvetica Bold" COLOR="white"
      >{{ model.label }}{% if model.abstracts %}<BR/>&lt;<FONT FACE="Helvetica Italic">{{ model.abstracts|join:"," }}</FONT>&gt;{% endif %}</FONT></TD></TR>
+
     {% if not disable_fields %}
         {% for field in model.fields %}
         <TR><TD ALIGN="LEFT" BORDER="0"
@@ -126,6 +134,7 @@ subgraph {{ cluster_app_name }} {
     </TABLE>
     >]
 {% endfor %}
+
 {% if use_subgraph %}
 }
 {% endif %}
@@ -168,6 +177,7 @@ def generate_dot(app_labels, **kwargs):
     all_applications = kwargs.get('all_applications', False)
     use_subgraph = kwargs.get('group_models', False)
     verbose_names = kwargs.get('verbose_names', False)
+    inheritance = kwargs.get('inheritance', False)
     language = kwargs.get('language', None)
     if language is not None:
         activate_language(language)
@@ -205,8 +215,16 @@ def generate_dot(app_labels, **kwargs):
             'models': []
         })
 
-        for appmodel in get_models(app):
-            abstracts = [e.__name__ for e in appmodel.__bases__ if hasattr(e, '_meta') and e._meta.abstract]
+        appmodels = get_models(app)
+        abstract_models = []
+        for appmodel in appmodels:
+            abstract_models = abstract_models + [abstract_model for abstract_model in appmodel.__bases__ if hasattr(abstract_model, '_meta') and abstract_model._meta.abstract]
+        abstract_models = list(set(abstract_models)) # remove duplicates
+        appmodels = abstract_models + appmodels
+        
+
+        for appmodel in appmodels:
+            appmodel_abstracts = [abstract_model.__name__ for abstract_model in appmodel.__bases__ if hasattr(abstract_model, '_meta') and abstract_model._meta.abstract]
 
             # collect all attribs of abstract superclasses
             def getBasesAbstractFields(c):
@@ -221,7 +239,7 @@ def generate_dot(app_labels, **kwargs):
             model = {
                 'app_name': appmodel.__module__.replace(".", "_"),
                 'name': appmodel.__name__,
-                'abstracts': abstracts,
+                'abstracts': appmodel_abstracts,
                 'fields': [],
                 'relations': []
             }
@@ -247,24 +265,38 @@ def generate_dot(app_labels, **kwargs):
                 else:
                     label = field.name
 
+                t = type(field).__name__
+                if isinstance(field, (OneToOneField, ForeignKey)):
+                    t += " ({0})".format(field.rel.field_name)
+                # TODO: ManyToManyField, GenericRelation
+
                 model['fields'].append({
                     'name': field.name,
                     'label': label,
-                    'type': type(field).__name__,
+                    'type': t,
                     'blank': field.blank,
                     'abstract': field in abstract_fields,
                 })
 
-            for field in appmodel._meta.fields:
+            # Find all the real attributes. Relations are depicted as graph edges instead of attributes
+            attributes = [field for field in appmodel._meta.local_fields if not isinstance(field, RelatedField)]
+
+            # find primary key and print it first, ignoring implicit id if other pk exists
+            pk = appmodel._meta.pk
+            if pk in attributes:
+                add_attributes(pk)
+            for field in attributes:
                 if skip_field(field):
                     continue
-                add_attributes(field)
-
-            if appmodel._meta.many_to_many:
-                for field in appmodel._meta.many_to_many:
-                    if skip_field(field):
-                        continue
+                if not field.primary_key:
                     add_attributes(field)
+            
+            # FIXME: actually many_to_many fields aren't saved in this model's db table, so why should we add an attribute-line for them in the resulting graph?
+            #if appmodel._meta.many_to_many:
+            #    for field in appmodel._meta.many_to_many:
+            #        if skip_field(field):
+            #            continue
+            #        add_attributes(field)
 
             # relations
             def add_relation(field, extras=""):
@@ -285,24 +317,49 @@ def generate_dot(app_labels, **kwargs):
                 if _rel not in model['relations'] and consider(_rel['target']):
                     model['relations'].append(_rel)
 
-            for field in appmodel._meta.fields:
+            for field in appmodel._meta.local_fields:
+                if field.attname.endswith('_ptr_id'): # excluding field redundant with inheritance relation
+                    continue
                 if skip_field(field):
                     continue
                 if isinstance(field, OneToOneField):
-                    add_relation(field, '[arrowhead=none arrowtail=none]')
+                    add_relation(field, '[arrowhead=none, arrowtail=none]')
                 elif isinstance(field, ForeignKey):
-                    add_relation(field)
+                    add_relation(field, '[arrowhead=none, arrowtail=dot]')
 
-            if appmodel._meta.many_to_many:
-                for field in appmodel._meta.many_to_many:
-                    if skip_field(field):
-                        continue
-                    if isinstance(field, ManyToManyField):
-                        if (getattr(field, 'creates_table', False) or  # django 1.1.
-                            (field.rel.through and field.rel.through._meta.auto_created)):  # django 1.2
-                            add_relation(field, '[arrowhead=normal arrowtail=normal]')
+            for field in appmodel._meta.local_many_to_many:
+                if skip_field(field):
+                    continue
+                if isinstance(field, ManyToManyField):
+                    if (getattr(field, 'creates_table', False) or  # django 1.1.
+                        (field.rel.through and field.rel.through._meta.auto_created)):  # django 1.2
+                        add_relation(field, '[arrowhead=dot arrowtail=dot, dir=both]')
                     elif isinstance(field, GenericRelation):
-                        add_relation(field, mark_safe('[style="dotted"] [arrowhead=normal arrowtail=normal]'))
+                        add_relation(field, mark_safe('[style="dotted", arrowhead=normal, arrowtail=normal, dir=both]'))
+            
+            if inheritance:
+                # add inheritance arrows
+                for parent in appmodel.__bases__:
+                    if hasattr(parent, "_meta"): # parent is a model
+                        l = "multi-table"
+                        if parent._meta.abstract:
+                            l = "abstract"
+                        if appmodel._meta.proxy:
+                            l = "proxy"
+                        l += r"\ninheritance"
+                        _rel = {
+                            'target_app': parent.__module__.replace(".", "_"),
+                            'target': parent.__name__,
+                            'type': "inheritance",
+                            'name': "inheritance",
+                            'label': l,
+                            'arrows': '[arrowhead=empty, arrowtail=none]',
+                            'needs_node': True
+                        }
+                        # TODO: seems as if abstract models aren't part of models.getModels, which is why they are printed by this without any attributes.
+                        if _rel not in model['relations'] and consider(_rel['target']):
+                            model['relations'].append(_rel)
+            
             graph['models'].append(model)
         graphs.append(graph)
 
@@ -327,11 +384,10 @@ def generate_dot(app_labels, **kwargs):
     dot += '\n' + tail_template
     return dot
 
-
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hadgi:L:x:X:",
-                    ["help", "all_applications", "disable_fields", "group_models", "include_models=", "verbose_names", "language=", "exclude_columns=", "exclude_models="])
+        opts, args = getopt.getopt(sys.argv[1:], "hadgi:L:x:X:en",
+                    ["help", "all_applications", "disable_fields", "group_models", "include_models=", "inheritance", "verbose_names", "language=", "exclude_columns=", "exclude_models="])
     except getopt.GetoptError, error:
         print __doc__
         sys.exit(error)
@@ -349,6 +405,8 @@ def main():
             kwargs['group_models'] = True
         if opt in ("-i", "--include_models"):
             kwargs['include_models'] = arg
+        if opt in ("-e", "--inheritance"):
+            kwargs['inheritance'] = True
         if opt in ("-n", "--verbose-names"):
             kwargs['verbose_names'] = True
         if opt in ("-L", "--language"):
