@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 """Django model to DOT (Graphviz) converter
 by Antonio Cavedoni <antonio@cavedoni.org>
 
@@ -67,7 +66,7 @@ else:
 
 from django.utils.translation import activate as activate_language
 from django.utils.safestring import mark_safe
-from django.template import Template, Context, loader
+from django.template import Template, Context
 from django.db import models
 from django.db.models import get_models
 from django.db.models.fields.related import \
@@ -77,6 +76,82 @@ try:
     from django.db.models.fields.generic import GenericRelation
 except ImportError:
     from django.contrib.contenttypes.generic import GenericRelation
+
+head_template = """
+digraph name {
+  fontname = "Helvetica"
+  fontsize = 8
+
+  node [
+    fontname = "Helvetica"
+    fontsize = 8
+    shape = "plaintext"
+  ]
+  edge [
+    fontname = "Helvetica"
+    fontsize = 8
+  ]
+
+"""
+
+body_template = """
+{% if use_subgraph %}
+subgraph {{ cluster_app_name }} {
+  label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD COLSPAN="2" CELLPADDING="4" ALIGN="CENTER"
+        ><FONT FACE="Helvetica Bold" COLOR="Black" POINT-SIZE="12"
+        >{{ app_name }}</FONT></TD></TR>
+        </TABLE>
+        >
+  color=olivedrab4
+  style="rounded"
+{% endif %}
+{% for model in models %}
+    {{ model.app_name }}_{{ model.name }} [label=<
+    <TABLE BGCOLOR="palegoldenrod" BORDER="0" CELLBORDER="0" CELLSPACING="0">
+     <TR><TD COLSPAN="2" CELLPADDING="4" ALIGN="CENTER" BGCOLOR="olivedrab4"
+     ><FONT FACE="Helvetica Bold" COLOR="white"
+     >{{ model.label }}{% if model.abstracts %}<BR/>&lt;<FONT FACE="Helvetica Italic">{{ model.abstracts|join:"," }}</FONT>&gt;{% endif %}</FONT></TD></TR>
+    {% if not disable_fields %}
+        {% for field in model.fields %}
+        <TR><TD ALIGN="LEFT" BORDER="0"
+        ><FONT {% if field.blank %}COLOR="#7B7B7B" {% endif %}FACE="Helvetica {% if field.abstract %}Italic{% else %}Bold{% endif %}">{{ field.label }}</FONT
+        ></TD>
+        <TD ALIGN="LEFT"
+        ><FONT {% if field.blank %}COLOR="#7B7B7B" {% endif %}FACE="Helvetica {% if field.abstract %}Italic{% else %}Bold{% endif %}">{{ field.type }}</FONT
+        ></TD></TR>
+        {% endfor %}
+    {% endif %}
+    </TABLE>
+    >]
+{% endfor %}
+{% if use_subgraph %}
+}
+{% endif %}
+"""
+
+rel_template = """
+  {% for model in models %}
+    {% for relation in model.relations %}
+    {% if relation.needs_node %}
+    {{ relation.target_app }}_{{ relation.target }} [label=<
+        <TABLE BGCOLOR="palegoldenrod" BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD COLSPAN="2" CELLPADDING="4" ALIGN="CENTER" BGCOLOR="olivedrab4"
+        ><FONT FACE="Helvetica Bold" COLOR="white"
+        >{{ relation.target }}</FONT></TD></TR>
+        </TABLE>
+        >]
+    {% endif %}
+    {{ model.app_name }}_{{ model.name }} -> {{ relation.target_app }}_{{ relation.target }}
+    [label="{{ relation.label }}"] {{ relation.arrows }};
+    {% endfor %}
+  {% endfor %}
+"""
+
+tail_template = """
+}
+"""
 
 
 def parse_file_or_list(arg):
@@ -108,12 +183,7 @@ def generate_dot(app_labels, **kwargs):
                 return True
         return False
 
-
-
-
-    t = loader.get_template('django_extensions/graph_models/head.html')
-    c = Context({})
-    dot = t.render(c)
+    dot = head_template
 
     apps = []
     if all_applications:
@@ -247,17 +317,14 @@ def generate_dot(app_labels, **kwargs):
                 if relation['target'] in nodes:
                     relation['needs_node'] = False
         # render templates
-        t = loader.get_template('django_extensions/graph_models/body.html')
+        t = Template(body_template)
         dot += '\n' + t.render(graph)
 
     for graph in graphs:
-        t = loader.get_template('django_extensions/graph_models/rel.html')
+        t = Template(rel_template)
         dot += '\n' + t.render(graph)
 
-
-    t = loader.get_template('django_extensions/graph_models/tail.html')
-    c = Context({})
-    dot += '\n' + t.render(c)
+    dot += '\n' + tail_template
     return dot
 
 
