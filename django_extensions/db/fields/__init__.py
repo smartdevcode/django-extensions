@@ -60,9 +60,7 @@ class AutoSlugField(SlugField):
         return re.sub(r'^%s+|%s+$' % (re_sep, re_sep), '', value)
 
     def slugify_func(self, content):
-        if content:
-            return slugify(content)
-        return ''
+        return slugify(content)
 
     def create_slug(self, model_instance, add):
         # get fields to populate from and slug field to set
