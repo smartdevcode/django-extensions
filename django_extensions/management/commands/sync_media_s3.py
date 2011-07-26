@@ -61,8 +61,7 @@ class Command(BaseCommand):
     GZIP_CONTENT_TYPES = (
         'text/css',
         'application/javascript',
-        'application/x-javascript',
-        'text/javascript'
+        'application/x-javascript'
     )
 
     upload_count = 0
