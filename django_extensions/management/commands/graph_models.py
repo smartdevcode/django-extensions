@@ -49,7 +49,7 @@ class Command(BaseCommand):
         try:
             import pygraphviz
         except ImportError, e:
-            raise CommandError("You need to install pygraphviz python module")
+            raise CommandError("need pygraphviz python module ( apt-get install python-pygraphviz )")
 
         vizdata = ' '.join(dotdata.split("\n")).strip().encode('utf-8')
         version = pygraphviz.__version__.rstrip("-svn")
