@@ -590,13 +590,7 @@ to check/debug ur models compared to the real database tables and columns."""
         from django.db import models
         from django.conf import settings
 
-        engine = None
-        if hasattr(settings, 'DATABASES'):
-            engine = settings.DATABASES['default']['ENGINE']
-        else:
-            engine = settings.DATABASE_ENGINE
-
-        if engine == 'dummy':
+        if settings.DATABASE_ENGINE == 'dummy':
             # This must be the "dummy" database backend, which means the user
             # hasn't set DATABASE_ENGINE.
             raise CommandError("Django doesn't know which syntax to use for your SQL statements,\n" +
@@ -623,6 +617,7 @@ to check/debug ur models compared to the real database tables and columns."""
         if not app_models:
             raise CommandError('Unable to execute sqldiff no models founds.')
 
+        engine = settings.DATABASE_ENGINE
         if not engine:
             engine = connection.__module__.split('.')[-2]
         cls = DATABASE_SQLDIFF_CLASSES.get(engine, GenericSQLDiff)
