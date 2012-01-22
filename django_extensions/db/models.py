@@ -17,8 +17,6 @@ class TimeStampedModel(models.Model):
     modified = ModificationDateTimeField(_('modified'))
 
     class Meta:
-        get_latest_by = 'modified'
-        ordering = ('-modified', '-created',)
         abstract = True
 
 
@@ -41,24 +39,23 @@ class ActivatorModelManager(models.Manager):
     """
     def active(self):
         """ Returns active instances of ActivatorModel: SomeModel.objects.active() """
-        return self.get_query_set().filter(status=ActivatorModel.ACTIVE_STATUS)
+        return super(ActivatorModelManager, self).get_query_set().filter(status=1)
 
     def inactive(self):
         """ Returns inactive instances of ActivatorModel: SomeModel.objects.inactive() """
-        return self.get_query_set().filter(status=ActivatorModel.INACTIVE_STATUS)
+        return super(ActivatorModelManager, self).get_query_set().filter(status=0)
 
 
 class ActivatorModel(models.Model):
     """ ActivatorModel
     An abstract base class model that provides activate and deactivate fields.
     """
-    INACTIVE_STATUS, ACTIVE_STATUS = range(2)
     STATUS_CHOICES = (
-        (INACTIVE_STATUS, _('Inactive')),
-        (ACTIVE_STATUS, _('Active')),
+        (0, _('Inactive')),
+        (1, _('Active')),
     )
     status = models.IntegerField(_('status'), choices=STATUS_CHOICES,
-        default=ACTIVE_STATUS)
+        default=1)
     activate_date = models.DateTimeField(blank=True, null=True,
         help_text=_('keep empty for an immediate activation'))
     deactivate_date = models.DateTimeField(blank=True, null=True,
@@ -66,7 +63,6 @@ class ActivatorModel(models.Model):
     objects = ActivatorModelManager()
 
     class Meta:
-        ordering = ('status', '-activate_date',)
         abstract = True
 
     def save(self, *args, **kwargs):

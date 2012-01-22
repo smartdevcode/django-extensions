@@ -29,6 +29,7 @@ class JSONEncoder(simplejson.JSONEncoder):
 
 
 def dumps(value):
+    assert isinstance(value, dict)
     return JSONEncoder().encode(value)
 
 
@@ -38,6 +39,7 @@ def loads(txt):
         parse_float=Decimal,
         encoding=settings.DEFAULT_CHARSET
     )
+    assert isinstance(value, dict)
     return value
 
 
@@ -45,13 +47,6 @@ class JSONDict(dict):
     """
     Hack so repr() called by dumpdata will output JSON instead of
     Python formatted data.  This way fixtures will work!
-    """
-    def __repr__(self):
-        return dumps(self)
-
-class JSONList(list):
-    """
-    As above
     """
     def __repr__(self):
         return dumps(self)
@@ -75,21 +70,17 @@ class JSONField(models.TextField):
             return {}
         elif isinstance(value, basestring):
             res = loads(value)
-            if isinstance(res, dict):
-                return JSONDict(**res)
-            else:
-                return JSONList(res)
-
+            assert isinstance(res, dict)
+            return JSONDict(**res)
         else:
             return value
 
     def get_db_prep_save(self, value, connection):
         """Convert our JSON object to a string before we save"""
-        if not isinstance(value, (list, dict)):
-            return super(JSONField, self).get_db_prep_save("", connection=connection)
+        if not value:
+            return super(JSONField, self).get_db_prep_save("")
         else:
-            return super(JSONField, self).get_db_prep_save(dumps(value),
-                                                           connection=connection)
+            return super(JSONField, self).get_db_prep_save(dumps(value))
 
     def south_field_triple(self):
         "Returns a suitable description of this field for South."

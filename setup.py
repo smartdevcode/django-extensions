@@ -5,10 +5,7 @@ import os
 import sys
 from distutils.command.install_data import install_data
 from distutils.command.install import INSTALL_SCHEMES
-try:
-    from setuptools import setup
-except ImportError:
-    from distutils.core import setup
+from distutils.core import setup
 
 
 class osx_install_data(install_data):
