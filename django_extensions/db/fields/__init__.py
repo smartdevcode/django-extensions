@@ -4,18 +4,13 @@ Django Extensions additional model fields
 
 from django.template.defaultfilters import slugify
 from django.db.models import DateTimeField, CharField, SlugField
+import datetime
 import re
 
 try:
     import uuid
 except ImportError:
     from django_extensions.utils import uuid
-
-try:
-    from django.utils.timezone import now as datetime_now
-except ImportError:
-    import datetime
-    datetime_now = datetime.datetime.now
 
 
 class AutoSlugField(SlugField):
@@ -164,7 +159,7 @@ class CreationDateTimeField(DateTimeField):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault('editable', False)
         kwargs.setdefault('blank', True)
-        kwargs.setdefault('default', datetime_now)
+        kwargs.setdefault('default', datetime.datetime.now)
         DateTimeField.__init__(self, *args, **kwargs)
 
     def get_internal_type(self):
@@ -188,7 +183,7 @@ class ModificationDateTimeField(CreationDateTimeField):
     """
 
     def pre_save(self, model, add):
-        value = datetime_now()
+        value = datetime.datetime.now()
         setattr(model, self.attname, value)
         return value
 
