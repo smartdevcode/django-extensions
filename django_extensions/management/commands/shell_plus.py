@@ -1,7 +1,6 @@
 import os
 from django.core.management.base import NoArgsCommand
 from optparse import make_option
-import time
 
 
 class Command(NoArgsCommand):
@@ -42,18 +41,14 @@ class Command(NoArgsCommand):
 
             class PrintQueryWrapper(util.CursorDebugWrapper):
                 def execute(self, sql, params=()):
-                    starttime = time.time()
                     try:
                         return self.cursor.execute(sql, params)
                     finally:
                         raw_sql = self.db.ops.last_executed_query(self.cursor, sql, params)
-                        execution_time = time.time() - starttime
                         if sqlparse:
                             print sqlparse.format(raw_sql, reindent=True)
                         else:
                             print raw_sql
-                        print
-                        print 'Execution time: %.6fs' % execution_time
                         print
 
             util.CursorDebugWrapper = PrintQueryWrapper
