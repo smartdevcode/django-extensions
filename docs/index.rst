@@ -52,7 +52,6 @@ Contents
    jobs_scheduling
    model_extensions
    namespace_proposal
-   print_settings
    runprofileserver
    runserver_plus
    sync_media_s3
