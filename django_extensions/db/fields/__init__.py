@@ -216,7 +216,6 @@ class UUIDField(CharField):
     def __init__(self, verbose_name=None, name=None, auto=True, version=1, node=None, clock_seq=None, namespace=None, **kwargs):
         kwargs['max_length'] = 36
         if auto:
-            self.empty_strings_allowed = False
             kwargs['blank'] = True
             kwargs.setdefault('editable', False)
         self.auto = auto
@@ -266,11 +265,6 @@ class UUIDField(CharField):
                 value = unicode(self.create_uuid())
                 setattr(model_instance, self.attname, value)
         return value
-    
-    def formfield(self, **kwargs):
-        if self.auto:
-            return None
-        super(UUIDField, self).formfield(**kwargs)
 
     def south_field_triple(self):
         "Returns a suitable description of this field for South."
