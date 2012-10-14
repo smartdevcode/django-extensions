@@ -26,30 +26,18 @@ def _make_writeable(filename):
         os.chmod(filename, new_permissions)
 
 
-def setup_logger(logger, stream, filename=None, fmt=None):
+def setup_logger(logger, stream=sys.stdout, filename=None):
     """Sets up a logger (if no handlers exist) for console output,
     and file 'tee' output if desired."""
     if len(logger.handlers) < 1:
         console = logging.StreamHandler(stream)
         console.setLevel(logging.DEBUG)
-        console.setFormatter(logging.Formatter(fmt))
+        console.setFormatter(logging.Formatter())
         logger.addHandler(console)
         logger.setLevel(logging.DEBUG)
 
         if filename:
             outfile = logging.FileHandler(filename)
             outfile.setLevel(logging.INFO)
-            outfile.setFormatter(logging.Formatter("%(asctime)s " + (fmt if fmt else '%(message)s')))
+            outfile.setFormatter(logging.Formatter())
             logger.addHandler(outfile)
-
-
-class RedirectHandler(logging.Handler):
-    """Redirect logging sent to one logger (name) to another."""
-    def __init__(self, name, level=logging.DEBUG):
-        # Contemplate feasibility of copying a destination (allow original handler) and redirecting.
-        super(RedirectHandler, self).__init__(level)
-        self.name = name
-        self.logger = logging.getLogger(name)
-
-    def emit(self, record):
-        self.logger.handle(record)
